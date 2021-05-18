@@ -9,7 +9,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Armazenamento">
-        <activity android:name=".DetalhesActivity"></activity>
+        <activity android:name=".DetalhesActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            ></activity>
         <activity android:name=".MainActivity">
             android:configChanges="keyboardHidden|orientation|screenSize"
             <intent-filter>

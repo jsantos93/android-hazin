@@ -8,7 +8,10 @@ import android.util.Log
 import android.view.View
 import android.widget.RadioButton
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.security.crypto.EncryptedFile
+import androidx.security.crypto.MasterKeys
 import kotlinx.android.synthetic.main.activity_main.*
+import kotlinx.android.synthetic.main.armazenamento_card.*
 import java.io.File
 
 class MainActivity : AppCompatActivity(), ArmazenamentoAdapter.OnItemClickListener {
@@ -36,22 +39,19 @@ class MainActivity : AppCompatActivity(), ArmazenamentoAdapter.OnItemClickListen
         createButton.setOnClickListener(){
             var title = armTitle.text.toString()
             if(title.isNotBlank()){
-                Log.i("MEU", title)
-//                val title = armTitle.text.toString()
                 val content = armContent.text.toString()
-
+                val isJetpackOn = checkBoxJetPack.isChecked
                 if(internalStorage){
-                    var fon = radio_internal.text.toString()
-                    Log.i("MEU", fon)
                     val newArm = Armazenamento(title, content, radio_internal.text.toString())
-                    writeInternalStorage(null, newArm)
+                    writeInternalStorage(null, newArm, isJetpackOn)
                 }
                 else if(externalStorage){
                     val newArm = Armazenamento(armTitle.text.toString(), armContent.text.toString(), radio_external.text.toString())
-                    writeExternalStorage(null, newArm)
+                    writeExternalStorage(null, newArm, isJetpackOn)
                 }
             }
         }
+
 
     }
 
@@ -81,45 +81,57 @@ class MainActivity : AppCompatActivity(), ArmazenamentoAdapter.OnItemClickListen
         armList.add(index, armazenamento)
         adapter.notifyItemInserted(index)
         arm_recycler_view.scrollToPosition(0)
-        Log.i("MEU", "achou")
     }
 
     override fun onItemClick(position: Int) {
         var armTarget = armList[position]
         val detailIntent = Intent(this, DetalhesActivity::class.java)
-        detailIntent.putExtra(MAIN_ACTIVITY_ARM_DETAIL_POSITION, position)
         detailIntent.putExtra(MAIN_ACTIVITY_ARM_DETAIL_PARCELABLE, armTarget)
         startActivityForResult(detailIntent, MAIN_ACTIVITY_ARM_DETAIL_CODE)
     }
 
 
-    private fun writeInternalStorage(view: View?, armazenamento: Armazenamento) {
+    private fun writeInternalStorage(view: View?, armazenamento: Armazenamento, isJetpackOn: Boolean) {
         try {
             val file = File(filesDir, armazenamento.arm_title)
-            Log.i("MEU", "InternalStorage")
             file.createNewFile()
-            openFileOutput(armazenamento.arm_title, MODE_PRIVATE).use {
-                it.write(armazenamento.arm_content.toByteArray())
+            if(isJetpackOn){
+                insertItem(null, armazenamento)
+                val encryptedFile = encryptFile(file)
+                encryptedFile?.openFileOutput().use { writer ->
+                    writer?.write(armazenamento.arm_content.toByteArray())
+                }
+            }else{
+                insertItem(null, armazenamento)
+                openFileOutput(armazenamento.arm_title, MODE_PRIVATE).use {
+                    it.write(armazenamento.arm_content.toByteArray())
+                }
             }
-
-            insertItem(null, armazenamento)
 
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    private fun writeExternalStorage(view: View?, armazenamento: Armazenamento) {
+    private fun writeExternalStorage(view: View?, armazenamento: Armazenamento, isJetpackOn: Boolean) {
         try {
             if(!isExternalStorageWritable()){
                 return
             }
             val fileDir = File(getExternalFilesDir(null), armazenamento.arm_title)
-            fileDir.createNewFile()
-            openFileOutput(armazenamento.arm_title, MODE_PRIVATE).use {
-                it.write(armazenamento.arm_content.toByteArray())
+            if(isJetpackOn){
+                insertItem(null, armazenamento)
+                val encryptedFile = encryptFile(fileDir)
+                encryptedFile?.openFileOutput().use { writer ->
+                    writer?.write(armazenamento.arm_content.toByteArray())
+                }
+            }else{
+                insertItem(null, armazenamento)
+                fileDir.createNewFile()
+                openFileOutput(armazenamento.arm_title, MODE_PRIVATE).use {
+                    it.write(armazenamento.arm_content.toByteArray())
+                }
             }
-            insertItem(null, armazenamento)
 
         } catch (e: Exception) {
             e.printStackTrace()
@@ -133,8 +145,37 @@ class MainActivity : AppCompatActivity(), ArmazenamentoAdapter.OnItemClickListen
     }
 
     // Checks if a volume containing external storage is available to at least read.
-    fun isExternalStorageReadable(): Boolean {
-        return Environment.getExternalStorageState() in
-                setOf(Environment.MEDIA_MOUNTED, Environment.MEDIA_MOUNTED_READ_ONLY)
+//    fun isExternalStorageReadable(): Boolean {
+//        return Environment.getExternalStorageState() in
+//                setOf(Environment.MEDIA_MOUNTED, Environment.MEDIA_MOUNTED_READ_ONLY)
+//    }
+
+    private fun deleteItem(view: View?, position: Int){
+        armList.removeAt(position)
+        adapter.notifyItemRemoved(position)
+    }
+
+    override fun onDeleteItemClick(position: Int) {
+        val armTarget = armList[position]
+        deleteItem(null, position)
+        if(armTarget.storage_type == radio_internal.text.toString()){
+            this.deleteFile(armTarget.arm_title)
+        }else{
+            val externalFile = File(this.getExternalFilesDir(null), armTarget.arm_title)
+            externalFile.delete()
+        }
+    }
+
+    private fun encryptFile(file: File): EncryptedFile? {
+        val keyGenParameterSpec = MasterKeys.AES256_GCM_SPEC
+        val masterKeyAlias = MasterKeys.getOrCreate(keyGenParameterSpec)
+
+        return EncryptedFile.Builder(
+            file,
+            this,
+            masterKeyAlias,
+            EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB
+        ).build()
     }
 }
+
